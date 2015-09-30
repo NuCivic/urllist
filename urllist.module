@@ -1,0 +1,165 @@
+<?php
+// $Id: urllist.module,v 1.19 2010/10/09 04:17:11 deekayen Exp $
+
+/**
+ * @file
+ * Creates a list of URLs for search engines to index.
+ *
+ * @version $Id: urllist.module,v 1.19 2010/10/09 04:17:11 deekayen Exp $
+ * @author David Kent Norman
+ * @link http://deekayen.net/
+ */
+
+/**
+ * Implements hook_menu().
+ *
+ * @return array
+ */
+function urllist_menu() {
+  $items = array();
+
+  $items['urllist.txt'] = array(
+    'page callback' => 'theme',
+    'page arguments' => array('urllist'),
+    'type' => MENU_CALLBACK,
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+  );
+  $items['urllist'] = array(
+    'page callback' => 'theme',
+    'page arguments' => array('urllist'),
+    'type' => MENU_CALLBACK,
+    'access callback' => 'user_access',
+    'access arguments' => array('access content'),
+  );
+  $items['admin/config/services/urllist'] = array(
+    'title' => 'URL list',
+    'description' => 'Toggle access log for URL list and edit Yahoo! API information.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('urllist_admin_settings'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_settings().
+ *
+ * @return array
+ */
+function urllist_admin_settings() {
+  $form = array();
+  $form['urllist_logacc'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Log accesses',
+    '#default_value' => variable_get('urllist_logacc', 0),
+    '#description' => t('If enabled, a watchdog entry will be made each time the URL list is accessed, containing information about the requestor.'),
+  );
+  $form = system_settings_form($form);
+  $form['#submit'][] = 'urllist_admin_settings_submit';
+
+  return $form;
+}
+
+/**
+ * Capture any Yahoo! verification link URLs so
+ * the menu can know to react to them when requested.
+ */
+function urllist_admin_settings_submit() {
+  menu_rebuild();
+  drupal_set_message(t('The URL List module re-built the menu information to check for a URL for Yahoo! authentication.'), 'status');
+}
+
+/**
+ * Print list of URLs in plaintext format.
+ */
+function theme_urllist() {
+  if (!ini_get('safe_mode')) {
+    drupal_set_time_limit(240);
+  }
+  header('Content-type: text/plain');
+  print url('', array('absolute' => TRUE)) . "\n";
+  if (module_exists('path')) {
+    $query = db_select('node', 'n');
+    $query->fields('n', array('nid', 'type', 'status', 'promote', 'changed', 'uuid'));
+    $table_alias = $query->leftJoin('url_alias', 'u', "u.source=CONCAT('node/',CAST(n.nid as CHAR))");
+    $query->fields('u', array('alias'));
+    $result = $query->execute();
+  }
+  else {
+    $query = db_select('node', 'n');
+    $query->fields('n', array('nid', 'type', 'status', 'promote', 'changed', 'uuid'));
+    $result = $query->execute();
+  }
+  foreach ($result as $node) {
+    if ($node->status) { // add check for if the node type is disabled or not
+      if (isset($node->dst)) { // alias is named
+        print url($node->dst) . "\n";
+      }
+      else {
+        print url('node/' . $node->nid) . "\n";
+      }
+    }
+    if (isset($node->uuid)) {
+      print '/api/3/action/package_show?id=' . $node->uuid . "\n";
+    }
+  }
+  if (module_exists('taxonomy')) {
+    $query = db_select('taxonomy_term_data', 'd');
+    $query->fields('d', array('tid'));
+    $result = $query->execute();
+    foreach ($result as $topic) {
+      print url('taxonomy/term/' . $topic->tid) . "\n";
+    }
+  }
+  if (variable_get('urllist_logacc', 0)) {
+    watchdog('urllist', 'URL list downloaded by ' . getenv('HTTP_USER_AGENT') . ' at ' . getenv('REMOTE_ADDR') . '.', NULL, WATCHDOG_INFO);
+  }
+  $dummy_nouns = array(
+    'time',
+    'person',
+    'year',
+    'way',
+    'day',
+    'thing',
+    'man',
+    'world',
+    'life',
+    'hand',
+    'part',
+    'child',
+    'eye',
+    'woman',
+    'place',
+    'work',
+    'week',
+    'case',
+    'point',
+    'government',
+    'company',
+    'number',
+    'group',
+    'problem',
+    'fact',
+  );
+  foreach ($dummy_nouns as $search_term) {
+    print '/datset?query=' . $search_term . "\n";
+  }
+  // DKAN items.
+  print '/data.json';
+
+}
+
+/**
+ * Implements hook_theme().
+ *
+ * @return array
+ */
+function urllist_theme() {
+  return array(
+    'urllist' => array(),
+  );
+}
